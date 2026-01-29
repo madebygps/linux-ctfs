@@ -1,31 +1,6 @@
 #!/bin/bash
-#
-# CTF Deploy and Test Orchestration Script
-# Deploys infrastructure to cloud providers and runs tests
-#
-# Usage:
-#   ./deploy_and_test.sh <aws|azure|gcp|all> [--with-reboot]
-#
-# Arguments:
-#   aws|azure|gcp|all    Cloud provider(s) to test
-#   --with-reboot        After initial tests pass, stop/start the VM and
-#                        re-run verification to ensure services survive
-#                        reboot and progress persists
-#
-# Prerequisites:
-#   - terraform (>= 1.0)
-#   - sshpass (macOS: brew install hudochenkov/sshpass/sshpass)
-#   - aws CLI (for AWS, must be logged in)
-#   - az CLI (for Azure, must be logged in)
-#   - gcloud CLI (for GCP, must be authenticated)
-#
-# Examples:
-#   ./deploy_and_test.sh aws                    # Test AWS only
-#   ./deploy_and_test.sh azure --with-reboot    # Test Azure with reboot
-#   ./deploy_and_test.sh all                    # Test all providers
-#   ./deploy_and_test.sh all --with-reboot      # Full test suite
-#
-
+# CTF Deploy & Test - See SKILL.md for documentation
+# Usage: ./deploy_and_test.sh <aws|azure|gcp|all> [--with-reboot]
 set -euo pipefail
 
 # Script directory
@@ -61,7 +36,10 @@ for arg in "$@"; do
             WITH_REBOOT=true
             ;;
         -h|--help)
-            head -30 "$0" | tail -28
+            echo "Usage: $0 <aws|azure|gcp|all> [--with-reboot]"
+            echo ""
+            echo "Deploy CTF infrastructure and run validation tests."
+            echo "See SKILL.md for full documentation."
             exit 0
             ;;
         *)

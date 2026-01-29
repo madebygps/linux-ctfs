@@ -1,138 +1,72 @@
 ---
 name: ctf-testing
-description: Deploy and test Linux CTF challenges across cloud providers (AWS, Azure, GCP). Use when testing CTF setup, validating challenges work correctly, running the full test suite, verifying services survive VM reboots, or after creating new challenges with ctf-challenge-creator skill.
+description: Test and validate CTF challenges by deploying to AWS, Azure, or GCP. Use after modifying ctf_setup.sh, creating new challenges, or before releases to verify all 18 challenges work correctly.
 ---
 
 # CTF Challenge Testing
 
-This skill deploys CTF infrastructure to cloud providers and validates all challenges work correctly.
+Test CTF infrastructure by deploying to cloud providers and validating all challenges work.
 
-**Often used after:** `ctf-challenge-creator` skill to verify new challenges work.
+## How to Use This Skill
 
-## Decision Tree: Which Provider?
+### Step 1: Verify Prerequisites
 
+Check these are installed and authenticated:
+
+```bash
+# Required tools
+terraform --version    # >= 1.0
+which sshpass          # macOS: brew install hudochenkov/sshpass/sshpass
+                       # Linux: sudo apt install sshpass
+
+# Cloud CLI (for your target provider)
+aws sts get-caller-identity     # AWS
+az account show                 # Azure
+gcloud auth list --filter=status:ACTIVE  # GCP
 ```
-What to test? → Testing new challenge locally first?
-├─ Yes → Use Azure (fastest deploy, ~3 min)
-│
-└─ No → Full validation before release?
-    ├─ Quick check → Pick one: aws | azure | gcp
-    └─ Full release validation → Use "all" + --with-reboot
-```
 
-## When to Use
+### Step 2: Choose Test Scope
 
-- Testing changes to `ctf_setup.sh`
-- Validating challenge setup across AWS, Azure, or GCP
-- Running the full test suite before releases
-- Verifying services survive VM reboots
+| Scenario | Command |
+|----------|---------|
+| Quick iteration on changes | `./deploy_and_test.sh azure` |
+| Full validation before release | `./deploy_and_test.sh all` |
+| Verify services survive reboot | `./deploy_and_test.sh azure --with-reboot` |
 
-## Prerequisites
-
-1. **terraform** (>= 1.0)
-2. **sshpass** - Install on macOS: `brew install hudochenkov/sshpass/sshpass`
-3. **Cloud CLI authenticated** for target provider:
-   - AWS: `aws sts get-caller-identity`
-   - Azure: `az account show`
-   - GCP: `gcloud auth list --filter=status:ACTIVE`
-
-## Running Tests
-
-The scripts are black boxes - run with `--help` or use these commands:
+### Step 3: Run Tests
 
 ```bash
 ./.github/skills/ctf-testing/deploy_and_test.sh <provider> [--with-reboot]
 ```
 
-| Command | Description |
-|---------|-------------|
-| `deploy_and_test.sh aws` | Test AWS only (~15 min) |
-| `deploy_and_test.sh azure` | Test Azure only (~15 min) |
-| `deploy_and_test.sh gcp` | Test GCP only (~15 min) |
-| `deploy_and_test.sh all` | Test all providers (~45 min) |
-| `deploy_and_test.sh aws --with-reboot` | Test with reboot verification (~20 min) |
+Wait ~15 minutes per provider. Expected output: `RESULT: PASS (<providers>)`
 
-## Common Pitfalls
+### Step 4: Verify Cleanup
 
-❌ **Don't** run tests without checking cloud CLI authentication first
-✅ **Do** verify with `aws sts get-caller-identity` / `az account show` / `gcloud auth list`
+After tests complete (or fail), confirm no resources remain:
 
-❌ **Don't** forget to check for leftover resources after a failed run
-✅ **Do** run the cleanup verification commands in "Post-Test Cleanup" section
-
-❌ **Don't** run `all` for quick iteration - it takes 45+ minutes
-✅ **Do** pick one provider (AWS is fastest) for development, `all` for releases
-
-## What Gets Tested
-
-1. **Verify command subcommands** - progress, list, hint, time, export
-2. **Challenge setup** - Files exist, services running, permissions correct
-3. **Solution commands** - Each challenge returns valid flag
-4. **Flag submission** - All 19 flags accepted by `verify`
-5. **Verification token system** - Instance secrets, token generation, token format validation
-6. **Reboot resilience** (with `--with-reboot`) - Services restart, progress persists
-
-## Expected Results
-
-A successful run shows **~84 tests passing**, followed by a short summary:
-- 7 verify subcommand tests
-- 24 challenge setup verifications
-- 19 solution command tests
-- 20 flag verification tests
-- 15 verification token tests
-
-Summary line: `RESULT: PASS (<providers>)` or `RESULT: FAIL (<providers>)`
-
-## Troubleshooting
-
-### Setup not completing
-- Check `/var/log/setup_complete` exists on VM
-- Review cloud-init logs: `/var/log/cloud-init-output.log`
-
-### Service not running
-- Check status: `systemctl status <service-name>`
-- Check logs: `journalctl -u <service-name>`
-
-### Port not accessible externally
-- Verify firewall rules in Terraform allow the port
-- Check security group/NSG in cloud console
-
-### SSH connection fails
-- Wait longer for VM setup (~3-5 minutes after IP available)
-- Verify security group allows port 22
-
-## Post-Test Cleanup
-
-Always verify resources were destroyed to avoid unexpected charges:
-
-**AWS:**
 ```bash
+# AWS
 aws ec2 describe-instances --filters "Name=tag:Name,Values=CTF*" "Name=instance-state-name,Values=running,pending,stopping,stopped" --query 'Reservations[*].Instances[*].[InstanceId,State.Name]' --output table
-aws ec2 describe-vpcs --filters "Name=tag:Name,Values=CTF*" --query 'Vpcs[*].VpcId' --output table
-```
 
-**Azure:**
-```bash
+# Azure
 az group list --query "[?starts_with(name, 'ctf')].name" --output table
-```
 
-**GCP:**
-```bash
+# GCP
 gcloud compute instances list --filter="name~'ctf'" --format="table(name,zone,status)"
 ```
 
-If resources remain, manually destroy:
-```bash
-cd <provider> && terraform destroy -auto-approve
-```
+If resources remain: `cd <provider> && terraform destroy -auto-approve`
+
+## Troubleshooting
+
+| Problem | Check |
+|---------|-------|
+| Setup not completing | `/var/log/setup_complete` exists? Check `/var/log/cloud-init-output.log` |
+| Service not running | `systemctl status <service>` and `journalctl -u <service>` |
+| SSH connection fails | Wait 3-5 min after IP available; verify security group allows port 22 |
 
 ## Scripts
 
-Reference files - treat as black boxes, run directly:
-
-- 📄 [deploy_and_test.sh](deploy_and_test.sh) - Orchestration script (runs locally)
-- 📄 [test_ctf_challenges.sh](test_ctf_challenges.sh) - VM test script (copied to and runs on deployed VM)
-
-## Related Skills
-
-- **ctf-challenge-creator** - Create new challenges, then use this skill to validate
+- [deploy_and_test.sh](deploy_and_test.sh) - Orchestration (runs locally)
+- [test_ctf_challenges.sh](test_ctf_challenges.sh) - Validation (runs on VM)

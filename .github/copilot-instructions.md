@@ -40,11 +40,6 @@ When helping users with this project:
 └── .github/skills/           # Copilot agent skills (maintainers only)
 ```
 
-## For Contributors/Maintainers
-
-- Run tests with `./.github/skills/ctf-testing/deploy_and_test.sh <provider>`
-- Test scripts contain solution commands - do not share with learners
-- Enable `chat.useAgentSkills` in VS Code settings to use the CTF testing skill
 
 ## The `verify` Command
 

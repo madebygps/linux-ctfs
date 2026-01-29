@@ -591,6 +591,7 @@ cat > /usr/local/bin/monitor_directory.sh << 'EOF'
 #!/bin/bash
 DIRECTORY="/home/ctf_user/ctf_challenges"
 FLAG=$(cat /etc/ctf/flag_10)
+READY_FILE="/tmp/.ctf_monitor_ready"
 # Wait for setup to complete before monitoring to avoid leaking flags during provisioning
 while [ ! -f /var/log/setup_complete ]; do
     sleep 5
@@ -599,13 +600,29 @@ sleep 10
 # Pre-create the trigger file location
 touch /tmp/.ctf_upload_triggered 2>/dev/null || true
 chmod 666 /tmp/.ctf_upload_triggered 2>/dev/null || true
-inotifywait -m -e create --format '%f' "$DIRECTORY" | while read FILE
-do
-    echo "A new file named $FILE has been added to $DIRECTORY. Here is your flag: $FLAG" | wall
-    # Also write flag to file for automated testing
-    echo "$FLAG" > /tmp/.ctf_upload_triggered
-    sync
-done
+touch "$READY_FILE" 2>/dev/null || true
+chmod 666 "$READY_FILE" 2>/dev/null || true
+
+if command -v inotifywait >/dev/null 2>&1; then
+    inotifywait -m -e create,close_write,moved_to --format '%f' "$DIRECTORY" | while read FILE
+    do
+        echo "A new file named $FILE has been added to $DIRECTORY. Here is your flag: $FLAG" | wall
+        # Also write flag to file for automated testing
+        echo "$FLAG" > /tmp/.ctf_upload_triggered
+        sync
+    done
+else
+    # Fallback polling if inotifywait isn't available for any reason
+    while true; do
+        if find "$DIRECTORY" -maxdepth 1 -type f -newer "$READY_FILE" -print -quit | grep -q .; then
+            echo "A new file has been added to $DIRECTORY. Here is your flag: $FLAG" | wall
+            echo "$FLAG" > /tmp/.ctf_upload_triggered
+            sync
+            touch "$READY_FILE"
+        fi
+        sleep 2
+    done
+fi
 EOF
 
 sudo chmod +x /usr/local/bin/monitor_directory.sh

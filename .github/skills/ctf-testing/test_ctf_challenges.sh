@@ -189,7 +189,7 @@ run_test_output "verify time - shows time or not started" \
     "verify time" "Time\|Timer"
 
 run_test_output "verify export - requires all challenges (should fail)" \
-    "verify export" "Complete all 18\|Congratulations"
+    "verify export testuser" "Complete all 18\|Congratulations"
 
 run_test_output "verify with invalid challenge - shows error" \
     "verify 99 CTF{test} 2>&1" "Usage\|Invalid\|Error"
@@ -355,11 +355,48 @@ test_and_capture_flag 9 "grep resolv.conf" \
 
 # Challenge 10 - trigger file creation and check flag file
 echo "Testing Challenge 10 (creating trigger file)..."
-true > /tmp/.ctf_upload_triggered 2>/dev/null || true
+
+# Wait for monitor readiness marker to avoid missing the create event
+for _ in {1..30}; do
+    if [ -f /tmp/.ctf_monitor_ready ]; then
+        break
+    fi
+    sleep 2
+done
+
+# Only clear the trigger file after monitor is confirmed ready
+if [ -f /tmp/.ctf_monitor_ready ]; then
+    true > /tmp/.ctf_upload_triggered 2>/dev/null || true
+    sleep 2
+fi
+
 TRIGGER_FILE="/home/ctf_user/ctf_challenges/test_trigger_$$"
 touch "$TRIGGER_FILE"
-sleep 3
+sleep 5
 sync
+
+# Wait for the monitor to write the flag (retry once if needed)
+for _ in {1..10}; do
+    if grep -q 'CTF{' /tmp/.ctf_upload_triggered 2>/dev/null; then
+        break
+    fi
+    sleep 2
+done
+
+if ! grep -q 'CTF{' /tmp/.ctf_upload_triggered 2>/dev/null; then
+    RETRY_FILE="${TRIGGER_FILE}_retry"
+    touch "$RETRY_FILE"
+    sleep 5
+    sync
+    for _ in {1..10}; do
+        if grep -q 'CTF{' /tmp/.ctf_upload_triggered 2>/dev/null; then
+            break
+        fi
+        sleep 2
+    done
+    rm -f "$RETRY_FILE"
+fi
+
 test_and_capture_flag 10 "trigger file creates flag" \
     "cat /tmp/.ctf_upload_triggered 2>/dev/null"
 rm -f "$TRIGGER_FILE"
@@ -495,10 +532,11 @@ run_test "Verification secrets: instance_id is 32 hex chars" \
 run_test "Verification secrets: verification_secret is 64 hex chars (SHA256)" \
     "test \$(cat /etc/ctf/verification_secret | wc -c) -eq 65"  # 64 chars + newline
 
-# Test export command now that all challenges are complete
-echo "Testing verify export command..."
+# Test export command only if all challenges are complete (export requires 18/18)
+if [ "$FAILED" -eq 0 ] && [ -n "${CAPTURED_FLAG_10:-}" ]; then
+    echo "Testing verify export command..."
 
-EXPORT_OUTPUT=$(verify export testuser 2>&1) || true
+    EXPORT_OUTPUT=$(verify export testuser 2>&1) || true
 # Save to file to avoid issues with special characters in ASCII art
 echo "$EXPORT_OUTPUT" > /tmp/ctf_export_output.txt
 
@@ -509,7 +547,8 @@ else
     fail "verify export creates certificate"
 fi
 
-if grep -q "testuser" /tmp/ctf_export_output.txt 2>/dev/null; then
+# Check saved certificate file for username (terminal output uses figlet ASCII art)
+if cat ~/ctf_certificate_*.txt 2>/dev/null | grep -q "testuser"; then
     pass "verify export shows GitHub username"
 else
     fail "verify export shows GitHub username"
@@ -567,7 +606,9 @@ if [ -n "$TOKEN" ]; then
 else
     fail "verify export: No token found in output"
 fi
-
+else
+    echo "Skipping export tests (not all challenges passed - requires 18/18)"
+fi
 # Test that export without username shows usage
 run_test_output "verify export without username shows usage" \
     "verify export 2>&1" "Usage:"
